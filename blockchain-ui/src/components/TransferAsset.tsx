@@ -16,6 +16,11 @@ export default function TransferAsset({
   myAssets,
   account
 }: TransferAssetProps) {
+  const normalizedAccount = account?.toLowerCase();
+  const ownedAssets = normalizedAccount
+    ? myAssets.filter((a) => (a.ownerNormalized ?? a.owner?.toLowerCase?.()) === normalizedAccount)
+    : myAssets;
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-gray-800 mb-4">Chuyển nhượng tài sản</h3>
@@ -26,7 +31,7 @@ export default function TransferAsset({
         className="w-full px-4 py-2 border border-gray-300 rounded-lg"
       >
         <option value="">Chọn tài sản</option>
-        {myAssets.filter(a => a.owner === account).map(a => (
+        {ownedAssets.map(a => (
           <option key={a.assetId} value={a.assetId}>
             #{a.assetId} - {a.name}
           </option>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Header from "./components/Header";
 import Notification from "./components/Notification";
 import UserManagement from "./components/UserManagement";
@@ -10,14 +10,15 @@ import { formatAddress, formatDate } from "./blockchain/utils";
 import { CONTRACT_ABI } from "./blockchain/abi";
 
 // Contract address - cần thay đổi khi deploy contract
-const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000";
+const CONTRACT_ADDRESS = "0xA18434B548D36b52aBb395B5c0e5C4Da50Ab1e62";
+const normalizeAddress = (addr?: string) => (addr ?? "").toLowerCase();
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("home");
   const [account, setAccount] = useState("");
   const [contract, setContract] = useState<any>(null);
-  const [provider, setProvider] = useState<any>(null);
   const [notification, setNotification] = useState({ show: false, type: "success" as "success" | "error", message: "" });
+  const [isOverviewLoading, setIsOverviewLoading] = useState(false);
 
   // User state
   const [userInfo, setUserInfo] = useState<any>(null);
@@ -29,6 +30,7 @@ export default function App() {
   const [assetName, setAssetName] = useState("");
   const [assetDesc, setAssetDesc] = useState("");
   const [assetDetails, setAssetDetails] = useState<any>(null);
+  const [viewAssetId, setViewAssetId] = useState("");
 
   // Transfer state
   const [transferAssetId, setTransferAssetId] = useState("");
@@ -56,7 +58,6 @@ export default function App() {
         const signer = await provider.getSigner();
         const contractInstance = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-        setProvider(provider);
         setContract(contractInstance);
 
         showNotification("success", "Đã kết nối ví thành công!");
@@ -72,43 +73,49 @@ export default function App() {
   const disconnectWallet = () => {
     setAccount("");
     setContract(null);
-    setProvider(null);
     setUserInfo(null);
     setMyAssets([]);
     showNotification("success", "Đã ngắt kết nối ví");
   };
 
   const loadUserData = async (contractInstance: any, userAddress: string) => {
+    if (!userAddress) return;
+    setIsOverviewLoading(true);
     try {
-      // Load user info
       const userData = await contractInstance.getUser(userAddress);
-      if (userData && userData[4]) { // isRegistered flag
+      if (userData && userData[4]) {
         setUserInfo({
           walletAddress: userData[0],
           name: userData[1],
           email: userData[2],
-          registeredAt: Number(userData[3]) * 1000, // Convert to milliseconds
+          registeredAt: Number(userData[3]) * 1000,
         });
         setUserName(userData[1]);
         setUserEmail(userData[2]);
+      } else {
+        setUserInfo(null);
       }
 
-      // Load user assets
       const assetIds = await contractInstance.getAssetsByOwner(userAddress);
       const assets = [];
       for (let i = 0; i < assetIds.length; i++) {
         const assetData = await contractInstance.getAsset(assetIds[i]);
+        const ownerAddress = assetData[3] || "";
+        const createdAt = Number(assetData[4]) * 1000;
         assets.push({
-          assetId: Number(assetIds[i]),
+          assetId: Number(assetData[0] ?? assetIds[i]),
           name: assetData[1],
           description: assetData[2],
-          owner: assetData[3],
-          createdAt: Number(assetData[4]) * 1000,
+          owner: ownerAddress,
+          ownerNormalized: normalizeAddress(ownerAddress),
+          createdAt,
         });
       }
-      setMyAssets(assets);
+      setMyAssets(assets.sort((a, b) => b.createdAt - a.createdAt));
     } catch (error: any) {
       console.error("Error loading user data:", error);
+    } finally {
+      setIsOverviewLoading(false);
     }
   };
 
@@ -243,6 +250,12 @@ export default function App() {
     }
   };
 
+  const refreshOverview = () => {
+    if (contract && account) {
+      loadUserData(contract, account);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header account={account} isConnected={!!account} onConnect={connectWallet} onDisconnect={disconnectWallet} />
@@ -314,6 +327,8 @@ export default function App() {
               account={account}
               formatAddress={formatAddress}
               formatDate={formatDate}
+              isLoading={isOverviewLoading}
+              onRefresh={refreshOverview}
             />
           )}
           {activeTab === "user" && (
@@ -342,6 +357,8 @@ export default function App() {
               account={account}
               formatAddress={formatAddress}
               formatDate={formatDate}
+              viewAssetId={viewAssetId}
+              setViewAssetId={setViewAssetId}
             />
           )}
           {activeTab === "transfer" && (
