@@ -39,6 +39,10 @@ export default function App() {
   // History state
   const [historyAssetId, setHistoryAssetId] = useState("");
   const [assetHistory, setAssetHistory] = useState<any[]>([]);
+  const [recentHistory, setRecentHistory] = useState<any[]>([]);
+  const [isRecentHistoryLoading, setIsRecentHistoryLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [hasHistorySearched, setHasHistorySearched] = useState(false);
 
   const showNotification = (type: "success" | "error", message: string) => {
     setNotification({ show: true, type, message });
@@ -75,7 +79,46 @@ export default function App() {
     setContract(null);
     setUserInfo(null);
     setMyAssets([]);
+    setAssetHistory([]);
+    setRecentHistory([]);
+    setHasHistorySearched(false);
     showNotification("success", "Đã ngắt kết nối ví");
+  };
+
+  const loadRecentHistoryForAssets = async (contractInstance: any, assets: any[]) => {
+    if (!assets.length) {
+      setRecentHistory([]);
+      return;
+    }
+    try {
+      setIsRecentHistoryLoading(true);
+      const subset = assets.slice(0, 5);
+      const historyResponses = await Promise.all(
+        subset.map(async (asset) => {
+          try {
+            const records = await contractInstance.getAssetHistory(asset.assetId);
+            return records.map((record: any) => ({
+              assetId: Number(record.assetId ?? asset.assetId),
+              from: record.from,
+              to: record.to,
+              timestamp: Number(record.timestamp) * 1000,
+              transactionType: record.transactionType,
+            }));
+          } catch {
+            return [];
+          }
+        })
+      );
+      const flattened = historyResponses
+        .flat()
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 10);
+      setRecentHistory(flattened);
+    } catch (error) {
+      console.error("Error loading recent history:", error);
+    } finally {
+      setIsRecentHistoryLoading(false);
+    }
   };
 
   const loadUserData = async (contractInstance: any, userAddress: string) => {
@@ -111,7 +154,9 @@ export default function App() {
           createdAt,
         });
       }
-      setMyAssets(assets.sort((a, b) => b.createdAt - a.createdAt));
+      const sortedAssets = assets.sort((a, b) => b.createdAt - a.createdAt);
+      setMyAssets(sortedAssets);
+      await loadRecentHistoryForAssets(contractInstance, sortedAssets);
     } catch (error: any) {
       console.error("Error loading user data:", error);
     } finally {
@@ -235,6 +280,7 @@ export default function App() {
       return;
     }
     try {
+      setIsHistoryLoading(true);
       const history = await contract.getAssetHistory(historyAssetId);
       const formattedHistory = history.map((record: any) => ({
         assetId: Number(record.assetId),
@@ -244,9 +290,13 @@ export default function App() {
         transactionType: record.transactionType,
       }));
       setAssetHistory(formattedHistory);
+      setHasHistorySearched(true);
     } catch (error: any) {
       showNotification("error", `Lỗi: ${error.message}`);
       setAssetHistory([]);
+      setHasHistorySearched(true);
+    } finally {
+      setIsHistoryLoading(false);
     }
   };
 
@@ -378,6 +428,10 @@ export default function App() {
               setHistoryAssetId={setHistoryAssetId}
               handleViewHistory={handleViewHistory}
               assetHistory={assetHistory}
+              recentHistory={recentHistory}
+              isHistoryLoading={isHistoryLoading}
+              isRecentHistoryLoading={isRecentHistoryLoading}
+              hasHistorySearched={hasHistorySearched}
               formatAddress={formatAddress}
               formatDate={formatDate}
             />
