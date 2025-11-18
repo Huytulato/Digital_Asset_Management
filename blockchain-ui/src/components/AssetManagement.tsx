@@ -33,6 +33,7 @@ export default function AssetManagement({
   const ownedAssets = normalizedAccount
     ? myAssets.filter((a) => (a.ownerNormalized ?? a.owner?.toLowerCase?.()) === normalizedAccount)
     : myAssets;
+  const hasOwnedAssets = ownedAssets.length > 0;
 
   return (
     <div className="space-y-8">
@@ -76,17 +77,23 @@ export default function AssetManagement({
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Tra cứu Tài sản</h3>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              type="number"
+            <select
               value={viewAssetId}
               onChange={(e) => setViewAssetId(e.target.value)}
-              placeholder="Nhập ID tài sản"
-              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none"
-            />
+              disabled={!hasOwnedAssets}
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none bg-white"
+            >
+              <option value="">{hasOwnedAssets ? "Chọn tài sản của bạn" : "Bạn chưa có tài sản nào"}</option>
+              {ownedAssets.map((asset) => (
+                <option key={asset.assetId} value={String(asset.assetId)}>
+                  #{asset.assetId} - {asset.name}
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => handleViewAsset(viewAssetId)}
               className="rounded-lg bg-blue-500 px-6 py-2 text-white font-medium hover:bg-blue-600 transition disabled:opacity-60"
-              disabled={!viewAssetId}
+              disabled={!viewAssetId || !hasOwnedAssets}
             >
               Xem
             </button>

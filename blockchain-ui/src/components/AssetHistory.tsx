@@ -9,6 +9,8 @@ interface AssetHistoryProps {
   hasHistorySearched: boolean;
   formatAddress: (addr: string) => string;
   formatDate: (timestamp: number) => string;
+  myAssets: any[];
+  account: string;
 }
 
 export default function AssetHistory({
@@ -21,8 +23,16 @@ export default function AssetHistory({
   isRecentHistoryLoading,
   hasHistorySearched,
   formatAddress,
-  formatDate
+  formatDate,
+  myAssets,
+  account
 }: AssetHistoryProps) {
+  const normalizedAccount = account?.toLowerCase();
+  const ownedAssets = normalizedAccount
+    ? myAssets.filter((asset) => (asset.ownerNormalized ?? asset.owner?.toLowerCase?.()) === normalizedAccount)
+    : myAssets;
+  const hasOwnedAssets = ownedAssets.length > 0;
+
   const renderHistoryList = (records: any[]) => (
     <div className="space-y-3">
       {records.map((record, idx) => (
@@ -51,22 +61,31 @@ export default function AssetHistory({
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Tra cứu lịch sử theo ID tài sản</h3>
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            type="number"
+          <select
             value={historyAssetId}
             onChange={(e) => setHistoryAssetId(e.target.value)}
-            placeholder="Nhập ID tài sản"
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none"
-          />
+            disabled={!hasOwnedAssets}
+            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none bg-white"
+          >
+            <option value="">{hasOwnedAssets ? "Chọn tài sản của bạn" : "Bạn chưa có tài sản nào"}</option>
+            {ownedAssets.map((asset) => (
+              <option key={asset.assetId} value={String(asset.assetId)}>
+                #{asset.assetId} - {asset.name}
+              </option>
+            ))}
+          </select>
 
           <button
             onClick={handleViewHistory}
             className="rounded-lg bg-blue-500 px-6 py-2 text-white font-medium hover:bg-blue-600 transition disabled:opacity-60"
-            disabled={!historyAssetId || isHistoryLoading}
+            disabled={!historyAssetId || isHistoryLoading || !hasOwnedAssets}
           >
             {isHistoryLoading ? "Đang tải..." : "Xem"}
           </button>
         </div>
+        {!hasOwnedAssets && (
+          <p className="text-sm text-gray-500 mt-2">Đăng ký tài sản để xem lịch sử giao dịch của bạn.</p>
+        )}
       </section>
 
       <section className="space-y-4">

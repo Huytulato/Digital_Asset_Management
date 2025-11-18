@@ -225,21 +225,36 @@ export default function App() {
   };
 
   const handleViewAsset = async (id: string) => {
-    if (!contract) {
+    if (!contract || !account) {
       showNotification("error", "Vui lòng kết nối ví trước!");
       return;
     }
     if (!id) {
-      showNotification("error", "Vui lòng nhập ID tài sản!");
+      showNotification("error", "Vui lòng chọn tài sản!");
       return;
     }
+
+    const normalizedAccount = normalizeAddress(account);
+    const ownedAsset = myAssets.find((asset) => String(asset.assetId) === String(id));
+    if (!ownedAsset || !normalizedAccount) {
+      showNotification("error", "Bạn chỉ có thể xem thông tin tài sản thuộc sở hữu của mình.");
+      setAssetDetails(null);
+      return;
+    }
+
     try {
       const assetData = await contract.getAsset(id);
+      const ownerAddress = assetData[3];
+      if (normalizeAddress(ownerAddress) !== normalizedAccount) {
+        showNotification("error", "Tài sản này không thuộc sở hữu của bạn.");
+        setAssetDetails(null);
+        return;
+      }
       setAssetDetails({
         assetId: Number(assetData[0]),
         name: assetData[1],
         description: assetData[2],
-        owner: assetData[3],
+        owner: ownerAddress,
         createdAt: Number(assetData[4]) * 1000,
       });
     } catch (error: any) {
@@ -271,14 +286,22 @@ export default function App() {
   };
 
   const handleViewHistory = async () => {
-    if (!contract) {
+    if (!contract || !account) {
       showNotification("error", "Vui lòng kết nối ví trước!");
       return;
     }
     if (!historyAssetId) {
-      showNotification("error", "Vui lòng nhập ID tài sản!");
+      showNotification("error", "Vui lòng chọn tài sản!");
       return;
     }
+
+    const normalizedAccount = normalizeAddress(account);
+    const ownedAsset = myAssets.find((asset) => String(asset.assetId) === String(historyAssetId));
+    if (!ownedAsset || !normalizedAccount) {
+      showNotification("error", "Bạn chỉ có thể xem lịch sử giao dịch của tài sản thuộc sở hữu của mình.");
+      return;
+    }
+
     try {
       setIsHistoryLoading(true);
       const history = await contract.getAssetHistory(historyAssetId);
@@ -434,6 +457,8 @@ export default function App() {
               hasHistorySearched={hasHistorySearched}
               formatAddress={formatAddress}
               formatDate={formatDate}
+              myAssets={myAssets}
+              account={account}
             />
           )}
         </div>
