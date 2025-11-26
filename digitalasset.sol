@@ -2,8 +2,9 @@
 pragma solidity ^0.8.0;
 
 /**
- * @title DigitalAssetManagement
- * @dev Quản lý tài sản số trên blockchain với tính minh bạch và bảo mật
+ * @title VehicleRegistry
+ * @dev Smart Contract quản lý đăng ký và chuyển nhượng xe
+ * Deploy với Remix IDE
  */
 contract DigitalAssetManagement {
     
