@@ -1,270 +1,252 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 /**
  * @title VehicleRegistry
  * @dev Smart Contract quản lý đăng ký và chuyển nhượng xe
  * Deploy với Remix IDE
  */
-contract DigitalAssetManagement {
+contract VehicleRegistry {
     
-    // Cấu trúc User
-    struct User {
-        address walletAddress;
-        string name;
-        string email;
-        uint256 registeredAt;
-        bool isRegistered;
+    // Trạng thái xe
+    enum VehicleStatus {
+        PENDING_NEW,        // 0: Chờ duyệt cấp mới
+        APPROVED,           // 1: Đã được cấp
+        PENDING_TRANSFER    // 2: Chờ duyệt chuyển nhượng
     }
     
-    // Cấu trúc Asset
-    struct Asset {
-        uint256 assetId;
-        string name;
-        string description;
-        address owner;
-        uint256 createdAt;
-        bool exists;
+    // Cấu trúc thông tin xe
+    struct Vehicle {
+        string chassisNumber;
+        string engineNumber;
+        string ipfsHash;
+        address currentOwner;
+        address pendingOwner;
+        VehicleStatus status;
+        uint256 registrationTime;
+        uint256 lastUpdateTime;
     }
     
-    // Cấu trúc Transaction History
-    struct TransactionRecord {
-        uint256 assetId;
-        address from;
-        address to;
-        uint256 timestamp;
-        string transactionType; // "CREATE" hoặc "TRANSFER"
-    }
+    // Địa chỉ cơ quan giao thông
+    address public authority;
     
-    // State variables
-    mapping(address => User) public users;
-    mapping(uint256 => Asset) public assets;
-    mapping(uint256 => TransactionRecord[]) public assetHistory;
-    
-    uint256 public assetCounter;
-    address[] public registeredUsers;
+    // Mapping lưu thông tin xe
+    mapping(string => Vehicle) public vehicles;
+    mapping(address => string[]) public ownerVehicles;
+    string[] public allVehicles;
     
     // Events
-    event UserRegistered(address indexed userAddress, string name, uint256 timestamp);
-    event UserUpdated(address indexed userAddress, string name, uint256 timestamp);
-    event AssetRegistered(uint256 indexed assetId, address indexed owner, string name, uint256 timestamp);
-    event AssetTransferred(uint256 indexed assetId, address indexed from, address indexed to, uint256 timestamp);
+    event VehicleRegistrationRequested(string chassisNumber, address owner);
+    event VehicleRegistrationApproved(string chassisNumber, address owner);
+    event TransferRequested(string chassisNumber, address from, address to);
+    event TransferApproved(string chassisNumber, address from, address to);
     
     // Modifiers
-    modifier onlyRegisteredUser() {
-        require(users[msg.sender].isRegistered, "User chua dang ky");
+    modifier onlyAuthority() {
+        require(msg.sender == authority, "Only authority can call this");
         _;
     }
     
-    modifier assetExists(uint256 _assetId) {
-        require(assets[_assetId].exists, "Tai san khong ton tai");
-        _;
-    }
-    
-    modifier onlyAssetOwner(uint256 _assetId) {
-        require(assets[_assetId].owner == msg.sender, "Ban khong phai chu so huu");
-        _;
-    }
-    
-    /**
-     * @dev Đăng ký user mới
-     * @param _name Tên người dùng
-     * @param _email Email người dùng
-     */
-    function registerUser(string memory _name, string memory _email) public {
-        require(!users[msg.sender].isRegistered, "User da ton tai");
-        require(bytes(_name).length > 0, "Ten khong duoc de trong");
-        
-        users[msg.sender] = User({
-            walletAddress: msg.sender,
-            name: _name,
-            email: _email,
-            registeredAt: block.timestamp,
-            isRegistered: true
-        });
-        
-        registeredUsers.push(msg.sender);
-        
-        emit UserRegistered(msg.sender, _name, block.timestamp);
-    }
-    
-    /**
-     * @dev Cập nhật thông tin user
-     * @param _name Tên mới
-     * @param _email Email mới
-     */
-    function updateProfile(string memory _name, string memory _email) public onlyRegisteredUser {
-        require(bytes(_name).length > 0, "Ten khong duoc de trong");
-        
-        users[msg.sender].name = _name;
-        users[msg.sender].email = _email;
-        
-        emit UserUpdated(msg.sender, _name, block.timestamp);
-    }
-    
-    /**
- * @dev Lấy thông tin user
- * @param _userAddress Địa chỉ user
- * @return walletAddress Địa chỉ ví của user
- * @return name Tên của user
- * @return email Email của user
- * @return registeredAt Thời điểm đăng ký
- * @return isRegistered Trạng thái đăng ký
- */
-    function getUser(address _userAddress) public view returns (
-        address walletAddress,
-        string memory name,
-        string memory email,
-        uint256 registeredAt,
-        bool isRegistered
-    ) {
-        User memory user = users[_userAddress];
-        return (
-            user.walletAddress,
-            user.name,
-            user.email,
-            user.registeredAt,
-            user.isRegistered
+    modifier onlyOwner(string memory chassisNumber) {
+        require(
+            vehicles[chassisNumber].currentOwner == msg.sender,
+            "Only vehicle owner can call this"
         );
+        _;
     }
     
+    // Constructor
+    constructor() {
+        authority = msg.sender;
+    }
+    
+    // ==================== MAIN FUNCTIONS ====================
+    
     /**
-     * @dev Đăng ký tài sản mới
-     * @param _name Tên tài sản
-     * @param _description Mô tả tài sản
+     * @dev Yêu cầu đăng ký xe mới
      */
-    function registerAsset(string memory _name, string memory _description) public onlyRegisteredUser {
-        require(bytes(_name).length > 0, "Ten tai san khong duoc de trong");
+    function requestRegistration(
+        string memory _chassisNumber,
+        string memory _engineNumber,
+        string memory _ipfsHash
+    ) public {
+        require(
+            bytes(vehicles[_chassisNumber].chassisNumber).length == 0,
+            "Vehicle already exists"
+        );
         
-        assetCounter++;
-        
-        assets[assetCounter] = Asset({
-            assetId: assetCounter,
-            name: _name,
-            description: _description,
-            owner: msg.sender,
-            createdAt: block.timestamp,
-            exists: true
+        Vehicle memory newVehicle = Vehicle({
+            chassisNumber: _chassisNumber,
+            engineNumber: _engineNumber,
+            ipfsHash: _ipfsHash,
+            currentOwner: msg.sender,
+            pendingOwner: address(0),
+            status: VehicleStatus.PENDING_NEW,
+            registrationTime: block.timestamp,
+            lastUpdateTime: block.timestamp
         });
         
-        // Thêm vào lịch sử
-        assetHistory[assetCounter].push(TransactionRecord({
-            assetId: assetCounter,
-            from: address(0),
-            to: msg.sender,
-            timestamp: block.timestamp,
-            transactionType: "CREATE"
-        }));
+        vehicles[_chassisNumber] = newVehicle;
+        allVehicles.push(_chassisNumber);
         
-        emit AssetRegistered(assetCounter, msg.sender, _name, block.timestamp);
+        emit VehicleRegistrationRequested(_chassisNumber, msg.sender);
     }
     
     /**
-     * @dev Chuyển nhượng tài sản
-     * @param _assetId ID tài sản
-     * @param _to Địa chỉ người nhận
+     * @dev Duyệt cấp mới (chỉ Authority)
      */
-    function transferAsset(uint256 _assetId, address _to) public 
-        onlyRegisteredUser 
-        assetExists(_assetId) 
-        onlyAssetOwner(_assetId) 
+    function approveRegistration(string memory _chassisNumber) 
+        public 
+        onlyAuthority 
     {
-        require(_to != address(0), "Dia chi khong hop le");
-        require(users[_to].isRegistered, "Nguoi nhan chua dang ky");
-        require(_to != msg.sender, "Khong the chuyen cho chinh minh");
-        
-        address previousOwner = assets[_assetId].owner;
-        assets[_assetId].owner = _to;
-        
-        // Thêm vào lịch sử
-        assetHistory[_assetId].push(TransactionRecord({
-            assetId: _assetId,
-            from: previousOwner,
-            to: _to,
-            timestamp: block.timestamp,
-            transactionType: "TRANSFER"
-        }));
-        
-        emit AssetTransferred(_assetId, previousOwner, _to, block.timestamp);
-    }
-    
-    /**
- * @dev Lấy thông tin tài sản
- * @param _assetId ID tài sản
- * @return assetId ID của tài sản
- * @return name Tên tài sản
- * @return description Mô tả tài sản
- * @return owner Chủ sở hữu tài sản
- * @return createdAt Thời điểm tạo
- */
-    function getAsset(uint256 _assetId) public view assetExists(_assetId) returns (
-        uint256 assetId,
-        string memory name,
-        string memory description,
-        address owner,
-        uint256 createdAt
-    ) {
-        Asset memory asset = assets[_assetId];
-        return (
-            asset.assetId,
-            asset.name,
-            asset.description,
-            asset.owner,
-            asset.createdAt
+        Vehicle storage vehicle = vehicles[_chassisNumber];
+        require(
+            vehicle.status == VehicleStatus.PENDING_NEW,
+            "Vehicle is not pending approval"
         );
-    }
-    
-    /**
-     * @dev Lấy lịch sử giao dịch của tài sản
-     * @param _assetId ID tài sản
-     * @return Mảng các transaction records
-     */
-    function getAssetHistory(uint256 _assetId) public view assetExists(_assetId) returns (TransactionRecord[] memory) {
-        return assetHistory[_assetId];
-    }
-    
-    /**
-     * @dev Lấy tổng số user đã đăng ký
-     * @return Số lượng user
-     */
-    function getTotalUsers() public view returns (uint256) {
-        return registeredUsers.length;
-    }
-    
-    /**
-     * @dev Lấy tổng số tài sản đã đăng ký
-     * @return Số lượng tài sản
-     */
-    function getTotalAssets() public view returns (uint256) {
-        return assetCounter;
-    }
-    
-    /**
-     * @dev Lấy danh sách tài sản của một user
-     * @param _owner Địa chỉ chủ sở hữu
-     * @return Mảng ID tài sản
-     */
-    function getAssetsByOwner(address _owner) public view returns (uint256[] memory) {
-        uint256 count = 0;
         
-        // Đếm số lượng tài sản
-        for (uint256 i = 1; i <= assetCounter; i++) {
-            if (assets[i].owner == _owner && assets[i].exists) {
+        vehicle.status = VehicleStatus.APPROVED;
+        vehicle.lastUpdateTime = block.timestamp;
+        ownerVehicles[vehicle.currentOwner].push(_chassisNumber);
+        
+        emit VehicleRegistrationApproved(_chassisNumber, vehicle.currentOwner);
+    }
+    
+    /**
+     * @dev Yêu cầu chuyển nhượng
+     */
+    function requestTransfer(
+        string memory _chassisNumber,
+        address _newOwner
+    ) public onlyOwner(_chassisNumber) {
+        Vehicle storage vehicle = vehicles[_chassisNumber];
+        require(
+            vehicle.status == VehicleStatus.APPROVED,
+            "Vehicle must be approved first"
+        );
+        require(_newOwner != address(0), "Invalid new owner address");
+        require(_newOwner != msg.sender, "Cannot transfer to yourself");
+        
+        vehicle.pendingOwner = _newOwner;
+        vehicle.status = VehicleStatus.PENDING_TRANSFER;
+        vehicle.lastUpdateTime = block.timestamp;
+        
+        emit TransferRequested(_chassisNumber, msg.sender, _newOwner);
+    }
+    
+    /**
+     * @dev Duyệt chuyển nhượng (chỉ Authority)
+     */
+    function approveTransfer(string memory _chassisNumber) 
+        public 
+        onlyAuthority 
+    {
+        Vehicle storage vehicle = vehicles[_chassisNumber];
+        require(
+            vehicle.status == VehicleStatus.PENDING_TRANSFER,
+            "No pending transfer"
+        );
+        
+        address oldOwner = vehicle.currentOwner;
+        address newOwner = vehicle.pendingOwner;
+        
+        _removeVehicleFromOwner(oldOwner, _chassisNumber);
+        
+        vehicle.currentOwner = newOwner;
+        vehicle.pendingOwner = address(0);
+        vehicle.status = VehicleStatus.APPROVED;
+        vehicle.lastUpdateTime = block.timestamp;
+        
+        ownerVehicles[newOwner].push(_chassisNumber);
+        
+        emit TransferApproved(_chassisNumber, oldOwner, newOwner);
+    }
+    
+    // ==================== INTERNAL FUNCTIONS ====================
+    
+    function _removeVehicleFromOwner(
+        address _owner,
+        string memory _chassisNumber
+    ) internal {
+        string[] storage vehicleList = ownerVehicles[_owner];
+        for (uint i = 0; i < vehicleList.length; i++) {
+            if (
+                keccak256(bytes(vehicleList[i])) == 
+                keccak256(bytes(_chassisNumber))
+            ) {
+                vehicleList[i] = vehicleList[vehicleList.length - 1];
+                vehicleList.pop();
+                break;
+            }
+        }
+    }
+    
+    // ==================== VIEW FUNCTIONS ====================
+    
+    /**
+     * @dev Lấy thông tin xe
+     */
+    function getVehicle(string memory _chassisNumber) 
+        public 
+        view 
+        returns (Vehicle memory) 
+    {
+        return vehicles[_chassisNumber];
+    }
+    
+    /**
+     * @dev Lấy danh sách xe của một chủ
+     */
+    function getOwnerVehicles(address _owner) 
+        public 
+        view 
+        returns (string[] memory) 
+    {
+        return ownerVehicles[_owner];
+    }
+    
+    /**
+     * @dev Lấy danh sách xe chờ duyệt
+     */
+    function getPendingVehicles() 
+        public 
+        view 
+        returns (string[] memory) 
+    {
+        uint count = 0;
+        for (uint i = 0; i < allVehicles.length; i++) {
+            if (vehicles[allVehicles[i]].status != VehicleStatus.APPROVED) {
                 count++;
             }
         }
         
-        // Tạo mảng kết quả
-        uint256[] memory result = new uint256[](count);
-        uint256 index = 0;
-        
-        for (uint256 i = 1; i <= assetCounter; i++) {
-            if (assets[i].owner == _owner && assets[i].exists) {
-                result[index] = i;
+        string[] memory pending = new string[](count);
+        uint index = 0;
+        for (uint i = 0; i < allVehicles.length; i++) {
+            if (vehicles[allVehicles[i]].status != VehicleStatus.APPROVED) {
+                pending[index] = allVehicles[i];
                 index++;
             }
         }
         
-        return result;
+        return pending;
+    }
+    
+    /**
+     * @dev Lấy tổng số xe
+     */
+    function getTotalVehicles() public view returns (uint) {
+        return allVehicles.length;
+    }
+    
+    /**
+     * @dev Đổi Authority
+     */
+    function changeAuthority(address _newAuthority) 
+        public 
+        onlyAuthority 
+    {
+        require(_newAuthority != address(0), "Invalid address");
+        authority = _newAuthority;
     }
 }
